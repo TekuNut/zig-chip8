@@ -9,6 +9,7 @@ const DISPLAY_WIDTH = 32;
 const DISPLAY_HEIGHT = 16;
 
 const VxKK = struct { vx: u8, kk: u8 };
+const VxVy = struct { vx: u8, vy: u8 };
 
 const Instructions = union(enum) {
     SYS: u8,
@@ -17,6 +18,9 @@ const Instructions = union(enum) {
     JP: u8,
     CALL: u8,
     ADD_Vx_Byte: VxKK,
+    ADD_Vx_Vy: VxVy,
+    LD_Vx_Byte: VxKK,
+    LD_Vx_Vy: VxVy,
     SE_Vx_Byte,
     UNKNOWN,
 };
@@ -48,21 +52,21 @@ const System = struct {
     }
 
     pub fn decode(ins: u16) Instructions {
-        const ins1 = ins & 0xF000;
-
         const x: u8 = @truncate((ins & 0x0F00) >> 8);
+        const y: u8 = @truncate((ins & 0x00F0) >> 4);
         const kk: u8 = @truncate(ins & 0x00FF);
 
-        return switch (ins1) {
-            0x0000 => {
-                if (ins == 0x00E0) {
-                    return Instructions.CLS;
-                }
-
-                return Instructions.UNKNOWN;
+        return switch (ins & 0xF000) {
+            0x0000 => switch (ins) {
+                0x00E0 => Instructions.CLS,
+                else => Instructions.UNKNOWN,
             },
-            0x7000 => {
-                return Instructions{ .ADD_Vx_Byte = .{ .vx = x, .kk = kk } };
+            0x6000 => Instructions{ .LD_Vx_Byte = .{ .vx = x, .kk = kk } },
+            0x7000 => Instructions{ .ADD_Vx_Byte = .{ .vx = x, .kk = kk } },
+            0x8000 => switch (ins & 0xF00F) {
+                0x8000 => Instructions{ .LD_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8004 => Instructions{ .ADD_Vx_Vy = .{ .vx = x, .vy = y } },
+                else => Instructions.UNKNOWN,
             },
             else => Instructions.UNKNOWN,
         };
@@ -80,7 +84,19 @@ const System = struct {
                 @memset(self.display[0..], 0);
             },
             Instructions.ADD_Vx_Byte => |i| {
-                self.v[i.vx] += i.kk;
+                const res, _ = @addWithOverflow(self.v[i.vx], i.kk);
+                self.v[i.vx] = res;
+            },
+            Instructions.LD_Vx_Byte => |i| {
+                self.v[i.vx] = i.kk;
+            },
+            Instructions.LD_Vx_Vy => |i| {
+                self.v[i.vx] = self.v[i.vy];
+            },
+            Instructions.ADD_Vx_Vy => |i| {
+                const res, const carry = @addWithOverflow(self.v[i.vx], self.v[i.vy]);
+                self.v[i.vx] = res;
+                self.v[15] = carry;
             },
             else => {
                 std.debug.print("Uknown instruction: 0x{X:0>4}\n", .{ins_raw});
@@ -106,18 +122,46 @@ test "cls instruction clears display" {
     try expect(std.mem.allEqual(u8, sys.display[0..], 0));
 }
 
-test "arithmetic instructions" {
+test "addition" {
     const program = [_]u16{
-        0x7020,
-        0x7130,
+        0x7020, // ADD V0, 0x20 ; Test basic addition
+        0x7130, // ADD V1, 0x30
+        0x7220, // ADD V2, 0x20
+        0x8214, // ADD V2, V1
+        0x73FF, // ADD V3, 0xFF ; Test overflow is detected.
+        0x7410, // ADD V4, 0x10
+        0x8344, // ADD V3, V4
     };
 
     var sys = std.mem.zeroInit(System, .{});
     sys.load_program(program[0..]);
 
-    sys.tick();
-    sys.tick();
+    for (program) |_| {
+        sys.tick();
+    }
 
     try expect(sys.v[0] == 0x20);
     try expect(sys.v[1] == 0x30);
+    try expect(sys.v[2] == 0x50);
+    try expect(sys.v[3] == 0x0F);
+    try expect(sys.v[15] == 0x01);
 }
+
+test "load instructions" {
+    const program = [_]u16{
+        0x60FF, // LD V0, 0xFF
+        0x8100, // LD V1, V0
+    };
+
+    var sys = std.mem.zeroInit(System, .{});
+    sys.load_program(program[0..]);
+
+    for (program) |_| {
+        sys.tick();
+    }
+
+    try expect(sys.v[0] == 0xFF);
+    try expect(sys.v[1] == 0xFF);
+}
+
+test "bit manipulation instructions" {}
