@@ -15,10 +15,12 @@ const Instructions = union(enum) {
     CLS,
     SE_Vx_Byte: VxKK,
     SNE_Vx_Byte: VxKK,
+    SE_Vx_Vy: VxVy,
     ADD_Vx_Byte: VxKK,
     ADD_Vx_Vy: VxVy,
     LD_Vx_Byte: VxKK,
     LD_Vx_Vy: VxVy,
+    SNE_Vx_Vy: VxVy,
     LD_I_Addr: u16,
     LD_Vx_DT: u8,
     LD_DT_Vx: u8,
@@ -41,11 +43,19 @@ const Instructions = union(enum) {
             },
             0x3000 => Instructions{ .SE_Vx_Byte = .{ .vx = x, .kk = kk } },
             0x4000 => Instructions{ .SNE_Vx_Byte = .{ .vx = x, .kk = kk } },
+            0x5000 => switch (ins & 0xF00F) {
+                0x5000 => Instructions{ .SE_Vx_Vy = .{ .vx = x, .vy = y } },
+                else => Instructions.UNKNOWN,
+            },
             0x6000 => Instructions{ .LD_Vx_Byte = .{ .vx = x, .kk = kk } },
             0x7000 => Instructions{ .ADD_Vx_Byte = .{ .vx = x, .kk = kk } },
             0x8000 => switch (ins & 0xF00F) {
                 0x8000 => Instructions{ .LD_Vx_Vy = .{ .vx = x, .vy = y } },
                 0x8004 => Instructions{ .ADD_Vx_Vy = .{ .vx = x, .vy = y } },
+                else => Instructions.UNKNOWN,
+            },
+            0x9000 => switch (ins & 0xF00F) {
+                0x9000 => Instructions{ .SNE_Vx_Vy = .{ .vx = x, .vy = y } },
                 else => Instructions.UNKNOWN,
             },
             0xA000 => Instructions{ .LD_I_Addr = nnn },
@@ -98,7 +108,6 @@ const System = struct {
             var buf = [2]u8{ 0, 0 };
             const addr = 0x200 + idx * 2;
             std.mem.writeInt(u16, &buf, ins, .big);
-            std.debug.print("loading instruction: {x:0>4}, idx={d}\n", .{ ins, idx });
 
             self.mem[addr] = buf[0];
             self.mem[addr + 1] = buf[1];
@@ -127,6 +136,11 @@ const System = struct {
                     self.pc += 2;
                 }
             },
+            Instructions.SE_Vx_Vy => |i| {
+                if (self.v[i.vx] == self.v[i.vy]) {
+                    self.pc += 2;
+                }
+            },
             Instructions.ADD_Vx_Byte => |i| {
                 const res, _ = @addWithOverflow(self.v[i.vx], i.kk);
                 self.v[i.vx] = res;
@@ -141,6 +155,11 @@ const System = struct {
                 const res, const carry = @addWithOverflow(self.v[i.vx], self.v[i.vy]);
                 self.v[i.vx] = res;
                 self.v[15] = carry;
+            },
+            Instructions.SNE_Vx_Vy => |i| {
+                if (self.v[i.vx] != self.v[i.vy]) {
+                    self.pc += 2;
+                }
             },
             Instructions.LD_I_Addr => |nnn| {
                 self.i = nnn;
@@ -263,6 +282,13 @@ test "skipping instructions" {
         0x63FF, // LD V3, 0xFF
         0x42FF, // SNE V2, 0xFE
         0x63FF, // LD V3, 0xFF
+        0x5120, // SE V1, V2
+        0x63FF, // LD V3, 0xFF
+        0x64FF, // LD V4, 0xFF
+        0x9340, // SNE V3, V4
+        0x63FF, // LD V3, 0xFF
+        0x00E0, // CLS
+        0x00E0, // CLS
         0x00E0, // CLS
         0x00E0, // CLS
         0x00E0, // CLS
@@ -271,7 +297,7 @@ test "skipping instructions" {
     var sys = std.mem.zeroInit(System, .{});
     sys.load_program(program[0..]);
 
-    for (0..program.len - 2) |_| {
+    for (0..program.len - 4) |_| {
         sys.tick();
     }
 
