@@ -13,6 +13,9 @@ const VxVy = struct { vx: u8, vy: u8 };
 
 const Instructions = union(enum) {
     CLS,
+    RET,
+    JP: u16,
+    CALL: u16,
     SE_Vx_Byte: VxKK,
     SNE_Vx_Byte: VxKK,
     SE_Vx_Vy: VxVy,
@@ -22,6 +25,7 @@ const Instructions = union(enum) {
     LD_Vx_Vy: VxVy,
     SNE_Vx_Vy: VxVy,
     LD_I_Addr: u16,
+    JP_V0_Addr: u16,
     LD_Vx_DT: u8,
     LD_DT_Vx: u8,
     LD_ST_Vx: u8,
@@ -39,8 +43,11 @@ const Instructions = union(enum) {
         return switch (ins & 0xF000) {
             0x0000 => switch (ins) {
                 0x00E0 => Instructions.CLS,
+                0x00EE => Instructions.RET,
                 else => Instructions.UNKNOWN,
             },
+            0x1000 => Instructions{ .JP = nnn },
+            0x2000 => Instructions{ .CALL = nnn },
             0x3000 => Instructions{ .SE_Vx_Byte = .{ .vx = x, .kk = kk } },
             0x4000 => Instructions{ .SNE_Vx_Byte = .{ .vx = x, .kk = kk } },
             0x5000 => switch (ins & 0xF00F) {
@@ -59,6 +66,7 @@ const Instructions = union(enum) {
                 else => Instructions.UNKNOWN,
             },
             0xA000 => Instructions{ .LD_I_Addr = nnn },
+            0xB000 => Instructions{ .JP_V0_Addr = nnn },
             0xF000 => switch (ins & 0xF0FF) {
                 0xF007 => Instructions{ .LD_Vx_DT = x },
                 0xF015 => Instructions{ .LD_DT_Vx = x },
@@ -100,6 +108,7 @@ const System = struct {
     v: [V_REGISTERS_LEN]u8,
     pc: u16 = 0x200,
     i: u16 = 0,
+    sp: u8 = 0,
     dt: u8 = 0,
     st: u8 = 0,
 
@@ -125,6 +134,18 @@ const System = struct {
         switch (ins) {
             Instructions.CLS => {
                 @memset(self.display[0..], 0);
+            },
+            Instructions.RET => {
+                self.sp -= 1;
+                self.pc = self.stack[self.sp];
+            },
+            Instructions.JP => |nnn| {
+                self.pc = nnn;
+            },
+            Instructions.CALL => |nnn| {
+                self.stack[self.sp] = self.pc; // Undo the early increment for the program counter.
+                self.sp += 1;
+                self.pc = nnn;
             },
             Instructions.SE_Vx_Byte => |i| {
                 if (self.v[i.vx] == i.kk) {
@@ -166,6 +187,9 @@ const System = struct {
             },
             Instructions.LD_DT_Vx => |vx| {
                 self.dt = self.v[vx];
+            },
+            Instructions.JP_V0_Addr => |nnn| {
+                self.pc = nnn + self.v[0];
             },
             Instructions.LD_Vx_DT => |vx| {
                 self.v[vx] = self.dt;
@@ -302,6 +326,36 @@ test "skipping instructions" {
     }
 
     try std.testing.expectEqual(0x00, sys.v[3]);
+}
+
+test "jumps and routine calling" {
+    const program = [_]u16{
+        0x2204, // CALL 0x204
+        0x120A, // JP 0x20A
+        0x61FF, // LD V1, 0xFF ; routine to set V1 to 0xFF
+        0x00EE, // RET
+        0x6FFF, // LD VF, 0xFF  ; check RET goes back.
+        0x62FF, // LD V2, 0xFF  ; target for JP at 0x202
+        0x6012, // LD V0, 0x12  ; Load offset for JP
+        0xB200, // JP V0, 0x200
+        0x6EFF, // LD VE, 0xFF  ; check JP, V0 works.
+        0x63FF, // LD V3, 0xFF  ; target for JP V0
+        0x6FFF, // LD VF, 0xFF  ; fail if too many ticks are executed
+    };
+
+    var sys = std.mem.zeroInit(System, .{});
+    sys.load_program(program[0..]);
+
+    for (1..9) |_| {
+        sys.tick();
+    }
+
+    try std.testing.expectEqual(0xFF, sys.v[1]);
+    try std.testing.expectEqual(0xFF, sys.v[2]);
+    try std.testing.expectEqual(0xFF, sys.v[3]);
+
+    try std.testing.expectEqual(0x00, sys.v[14]);
+    try std.testing.expectEqual(0x00, sys.v[15]);
 }
 
 test "bit manipulation instructions" {}
