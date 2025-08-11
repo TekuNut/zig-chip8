@@ -4,12 +4,15 @@ const expect = std.testing.expect;
 const MEMORY_LEN = 4096;
 const V_REGISTERS_LEN = 16;
 const STACK_LEN = 16;
+const FONT_LEN = 5 * 16;
+const FONT_ADDR = 0x0050;
 
 const DISPLAY_WIDTH = 32;
 const DISPLAY_HEIGHT = 16;
 
 const VxKK = struct { vx: u8, kk: u8 };
 const VxVy = struct { vx: u8, vy: u8 };
+const VxVyN = struct { vx: u8, vy: u8, n: u8 };
 
 const Instructions = union(enum) {
     CLS,
@@ -19,16 +22,30 @@ const Instructions = union(enum) {
     SE_Vx_Byte: VxKK,
     SNE_Vx_Byte: VxKK,
     SE_Vx_Vy: VxVy,
-    ADD_Vx_Byte: VxKK,
-    ADD_Vx_Vy: VxVy,
     LD_Vx_Byte: VxKK,
+    ADD_Vx_Byte: VxKK,
     LD_Vx_Vy: VxVy,
+    OR_Vx_Vy: VxVy,
+    AND_Vx_Vy: VxVy,
+    XOR_Vx_Vy: VxVy,
+    ADD_Vx_Vy: VxVy,
+    SUB_Vx_Vy: VxVy,
+    SHR_Vx_Vy: VxVy,
+    SUBN_Vx_Vy: VxVy,
+    SHL_Vx_Vy: VxVy,
     SNE_Vx_Vy: VxVy,
     LD_I_Addr: u16,
     JP_V0_Addr: u16,
+    RND_Vx_Byte: VxKK,
+    DRW_Vx_Vy_N: VxVyN,
+    SKP_Vx: u8,
+    SKNP_Vx: u8,
     LD_Vx_DT: u8,
     LD_DT_Vx: u8,
+    LD_Vx_K: u8,
     LD_ST_Vx: u8,
+    ADD_I_Vx: u8,
+    LD_F_Vx: u8,
     LD_B_Vx: u8,
     LD_ArrI_Vx: u8,
     LD_Vx_ArrI: u8,
@@ -39,6 +56,7 @@ const Instructions = union(enum) {
         const y: u8 = @truncate((ins & 0x00F0) >> 4);
         const kk: u8 = @truncate(ins & 0x00FF);
         const nnn: u16 = ins & 0x0FFF;
+        const n: u8 = @truncate(ins & 0x000F);
 
         return switch (ins & 0xF000) {
             0x0000 => switch (ins) {
@@ -58,7 +76,14 @@ const Instructions = union(enum) {
             0x7000 => Instructions{ .ADD_Vx_Byte = .{ .vx = x, .kk = kk } },
             0x8000 => switch (ins & 0xF00F) {
                 0x8000 => Instructions{ .LD_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8001 => Instructions{ .OR_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8002 => Instructions{ .AND_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8003 => Instructions{ .XOR_Vx_Vy = .{ .vx = x, .vy = y } },
                 0x8004 => Instructions{ .ADD_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8005 => Instructions{ .SUB_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8006 => Instructions{ .SHR_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x8007 => Instructions{ .SUBN_Vx_Vy = .{ .vx = x, .vy = y } },
+                0x800E => Instructions{ .SHL_Vx_Vy = .{ .vx = x, .vy = y } },
                 else => Instructions.UNKNOWN,
             },
             0x9000 => switch (ins & 0xF00F) {
@@ -67,10 +92,20 @@ const Instructions = union(enum) {
             },
             0xA000 => Instructions{ .LD_I_Addr = nnn },
             0xB000 => Instructions{ .JP_V0_Addr = nnn },
+            0xC000 => Instructions{ .RND_Vx_Byte = .{ .vx = x, .kk = kk } },
+            0xD000 => Instructions{ .DRW_Vx_Vy_N = .{ .vx = x, .vy = y, .n = n } },
+            0xE000 => switch (ins & 0xF0FF) {
+                0xE09E => Instructions{ .SKP_Vx = x },
+                0xE0A1 => Instructions{ .SKNP_Vx = x },
+                else => Instructions.UNKNOWN,
+            },
             0xF000 => switch (ins & 0xF0FF) {
                 0xF007 => Instructions{ .LD_Vx_DT = x },
+                0xF00A => Instructions{ .LD_Vx_K = x },
                 0xF015 => Instructions{ .LD_DT_Vx = x },
                 0xF018 => Instructions{ .LD_ST_Vx = x },
+                0xF01E => Instructions{ .ADD_I_Vx = x },
+                0xF029 => Instructions{ .LD_F_Vx = x },
                 0xF033 => Instructions{ .LD_B_Vx = x },
                 0xF055 => Instructions{ .LD_ArrI_Vx = x },
                 0xF065 => Instructions{ .LD_Vx_ArrI = x },
@@ -85,7 +120,7 @@ const System = struct {
     mem: [MEMORY_LEN]u8 = [_]u8{0} ** MEMORY_LEN,
     display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u8 = [_]u8{0} ** (DISPLAY_WIDTH * DISPLAY_HEIGHT),
     stack: [STACK_LEN]u16,
-    font: [5 * 16]u8 = [_]u8{
+    font: [FONT_LEN]u8 = [_]u8{
         0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
         0x20, 0x60, 0x20, 0x20, 0x70, // 1
         0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -112,7 +147,23 @@ const System = struct {
     dt: u8 = 0,
     st: u8 = 0,
 
+    pub fn reset(self: *System) void {
+        @memset(self.mem[0..], 0);
+        @memset(self.display[0..], 0);
+        @memset(self.v[0..], 0);
+        @memset(self.stack[0..], 0);
+        @memcpy(self.mem[FONT_ADDR..][0..FONT_LEN], self.font[0..]);
+
+        self.pc = 0x200;
+        self.i = 0;
+        self.sp = 0;
+        self.dt = 0;
+        self.st = 0;
+    }
+
     pub fn load_program(self: *System, program: []const u16) void {
+        self.reset();
+
         for (program, 0..) |ins, idx| {
             var buf = [2]u8{ 0, 0 };
             const addr = 0x200 + idx * 2;
@@ -140,12 +191,12 @@ const System = struct {
                 self.pc = self.stack[self.sp];
             },
             Instructions.JP => |nnn| {
-                self.pc = nnn;
+                self.pc = (nnn & 0x0FFF);
             },
             Instructions.CALL => |nnn| {
                 self.stack[self.sp] = self.pc; // Undo the early increment for the program counter.
                 self.sp += 1;
-                self.pc = nnn;
+                self.pc = (nnn & 0x0FFF);
             },
             Instructions.SE_Vx_Byte => |i| {
                 if (self.v[i.vx] == i.kk) {
@@ -162,20 +213,45 @@ const System = struct {
                     self.pc += 2;
                 }
             },
+            Instructions.LD_Vx_Byte => |i| {
+                self.v[i.vx] = i.kk;
+            },
             Instructions.ADD_Vx_Byte => |i| {
                 const res, _ = @addWithOverflow(self.v[i.vx], i.kk);
                 self.v[i.vx] = res;
             },
-            Instructions.LD_Vx_Byte => |i| {
-                self.v[i.vx] = i.kk;
-            },
             Instructions.LD_Vx_Vy => |i| {
                 self.v[i.vx] = self.v[i.vy];
+            },
+            Instructions.OR_Vx_Vy => |i| {
+                self.v[i.vx] |= self.v[i.vy];
+            },
+            Instructions.AND_Vx_Vy => |i| {
+                self.v[i.vx] &= self.v[i.vy];
+            },
+            Instructions.XOR_Vx_Vy => |i| {
+                self.v[i.vx] ^= self.v[i.vy];
             },
             Instructions.ADD_Vx_Vy => |i| {
                 const res, const carry = @addWithOverflow(self.v[i.vx], self.v[i.vy]);
                 self.v[i.vx] = res;
                 self.v[15] = carry;
+            },
+            Instructions.SUB_Vx_Vy => |i| {
+                self.v[15] = @intFromBool(self.v[i.vx] > self.v[i.vy]);
+                self.v[i.vx] -= self.v[i.vy];
+            },
+            Instructions.SHR_Vx_Vy => |i| {
+                self.v[0xF] = self.v[i.vx] & 0x1;
+                self.v[i.vx] >>= 1;
+            },
+            Instructions.SUBN_Vx_Vy => |i| {
+                self.v[0xF] = @intFromBool(self.v[i.vy] > self.v[i.vx]);
+                self.v[i.vx] = self.v[i.vy] - self.v[i.vx];
+            },
+            Instructions.SHL_Vx_Vy => |i| {
+                self.v[0xF] = (self.v[i.vx] & 0x80) >> 7;
+                self.v[i.vx] <<= 1;
             },
             Instructions.SNE_Vx_Vy => |i| {
                 if (self.v[i.vx] != self.v[i.vy]) {
@@ -185,18 +261,25 @@ const System = struct {
             Instructions.LD_I_Addr => |nnn| {
                 self.i = nnn;
             },
-            Instructions.LD_DT_Vx => |vx| {
-                self.dt = self.v[vx];
-            },
             Instructions.JP_V0_Addr => |nnn| {
                 self.pc = nnn + self.v[0];
+            },
+            Instructions.RND_Vx_Byte => |_| {},
+            Instructions.DRW_Vx_Vy_N => |_| {},
+            Instructions.SKP_Vx => |_| {},
+            Instructions.SKNP_Vx => |_| {},
+            Instructions.LD_DT_Vx => |vx| {
+                self.dt = self.v[vx];
             },
             Instructions.LD_Vx_DT => |vx| {
                 self.v[vx] = self.dt;
             },
+            Instructions.LD_Vx_K => |_| {},
             Instructions.LD_ST_Vx => |vx| {
                 self.st = self.v[vx];
             },
+            Instructions.ADD_I_Vx => |_| {},
+            Instructions.LD_F_Vx => |_| {},
             Instructions.LD_B_Vx => |vx| {
                 const v = self.v[vx];
                 const bcd = [_]u8{ v / 100, (v / 10) % 10, v % 10 };
@@ -211,6 +294,12 @@ const System = struct {
             Instructions.UNKNOWN => {
                 std.debug.print("Uknown instruction: 0x{X:0>4}\n", .{ins_raw});
             },
+        }
+    }
+
+    pub fn tickN(self: *System, count: usize) void {
+        for (0..count) |_| {
+            self.tick();
         }
     }
 };
@@ -358,4 +447,46 @@ test "jumps and routine calling" {
     try std.testing.expectEqual(0x00, sys.v[15]);
 }
 
-test "bit manipulation instructions" {}
+test "bit manipulation instructions" {
+    var sys = std.mem.zeroInit(System, .{});
+    sys.load_program(&[_]u16{
+        0x60FF, // LD V0, 0xCC
+        0x61CC, // LD V1, 0xFF
+        0x8012, // AND V0, V1
+        0x62AA, // LD V2, 0xCC
+        0x6355, // LD V3, 0x55
+        0x8231, // OR V2, V3
+        0x64FF, // LD V4, 0xFF
+        0x65AA, // LD V5, 0xAA
+        0x8453, // XOR V4, V5
+    });
+    sys.tickN(9);
+
+    try std.testing.expectEqual(0xCC, sys.v[0]);
+    try std.testing.expectEqual(0xFF, sys.v[2]);
+    try std.testing.expectEqual(0x55, sys.v[4]);
+
+    sys.load_program(&[_]u16{
+        0x60FF, // LD V0, 0xFF
+        0x615E, // LD V1, 0x5F
+        0x8006, // SHR V0
+        0x8106, // SHR V1
+        0x60FF, // LD V0, 0xFF
+        0x617F, // LD V1, 0x7F
+        0x800E, // SHL V0
+        0x810E, // SHL V1
+    });
+
+    sys.tickN(3);
+    try std.testing.expectEqual(0x7F, sys.v[0]);
+    try std.testing.expectEqual(0x01, sys.v[0xF]);
+    sys.tick();
+    try std.testing.expectEqual(0x2F, sys.v[1]);
+    try std.testing.expectEqual(0x00, sys.v[0xF]);
+    sys.tickN(3);
+    try std.testing.expectEqual(0xFE, sys.v[0]);
+    try std.testing.expectEqual(0x01, sys.v[0xF]);
+    sys.tick();
+    try std.testing.expectEqual(0xFE, sys.v[1]);
+    try std.testing.expectEqual(0x00, sys.v[0xf]);
+}
