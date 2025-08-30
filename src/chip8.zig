@@ -116,7 +116,7 @@ const Instructions = union(enum) {
     }
 };
 
-const System = struct {
+pub const System = struct {
     mem: [MEMORY_LEN]u8 = [_]u8{0} ** MEMORY_LEN,
     display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u8 = [_]u8{0} ** (DISPLAY_WIDTH * DISPLAY_HEIGHT),
     stack: [STACK_LEN]u16,
