@@ -17,6 +17,7 @@ pub fn main() anyerror!void {
         \\-h, --help             Display this help and exit.
         \\ -r, --rom   <str>     ROM file to load on startup.
         \\ -s, --speed <u32>     Number of ticks to run per frame.
+        \\ -d, --debug           Start with debug mode on.
     );
 
     // Initialize diagnostics to report useful errors. Parse the command params into `res`.
@@ -41,7 +42,7 @@ pub fn main() anyerror!void {
 
     rl.setTargetFPS(60);
 
-    var sys = zig8.System.init(0);
+    var sys = zig8.System.init();
 
     sys.reset();
     if (res.args.rom) |r| {
@@ -63,7 +64,7 @@ pub fn main() anyerror!void {
     }
 
     var paused = false;
-    var debug = true;
+    var debug = res.args.debug != 0;
 
     var display = rl.Image.genColor(@as(i32, sys.display_width), @as(i32, sys.display_height), .black);
     const display_texture = try rl.Texture2D.fromImage(display);

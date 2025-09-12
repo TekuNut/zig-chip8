@@ -228,17 +228,17 @@ pub const System = struct {
             },
             Instructions.SE_Vx_Byte => |i| {
                 if (self.v[i.vx] == i.kk) {
-                    self.pc += 2;
+                    self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
             Instructions.SNE_Vx_Byte => |i| {
                 if (self.v[i.vx] != i.kk) {
-                    self.pc += 2;
+                    self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
             Instructions.SE_Vx_Vy => |i| {
                 if (self.v[i.vx] == self.v[i.vy]) {
-                    self.pc += 2;
+                    self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
             Instructions.LD_Vx_Byte => |i| {
@@ -263,19 +263,21 @@ pub const System = struct {
             Instructions.ADD_Vx_Vy => |i| {
                 const res, const carry = @addWithOverflow(self.v[i.vx], self.v[i.vy]);
                 self.v[i.vx] = res;
-                self.v[15] = carry;
+                self.v[0xF] = carry;
             },
             Instructions.SUB_Vx_Vy => |i| {
-                self.v[15] = @intFromBool(self.v[i.vx] > self.v[i.vy]);
-                self.v[i.vx] -= self.v[i.vy];
+                const res, const carry = @subWithOverflow(self.v[i.vx], self.v[i.vy]);
+                self.v[i.vx] = res;
+                self.v[0xF] = carry;
             },
             Instructions.SHR_Vx_Vy => |i| {
                 self.v[0xF] = self.v[i.vx] & 0x1;
                 self.v[i.vx] >>= 1;
             },
             Instructions.SUBN_Vx_Vy => |i| {
-                self.v[0xF] = @intFromBool(self.v[i.vy] > self.v[i.vx]);
-                self.v[i.vx] = self.v[i.vy] - self.v[i.vx];
+                const res, const carry = @subWithOverflow(self.v[i.vy], self.v[i.vx]);
+                self.v[i.vx] = res;
+                self.v[0xF] = carry;
             },
             Instructions.SHL_Vx_Vy => |i| {
                 self.v[0xF] = (self.v[i.vx] & 0x80) >> 7;
@@ -283,14 +285,14 @@ pub const System = struct {
             },
             Instructions.SNE_Vx_Vy => |i| {
                 if (self.v[i.vx] != self.v[i.vy]) {
-                    self.pc += 2;
+                    self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
             Instructions.LD_I_Addr => |nnn| {
                 self.i = nnn;
             },
             Instructions.JP_V0_Addr => |nnn| {
-                self.pc = nnn + self.v[0];
+                self.pc = (nnn + self.v[0]) % 0x0FFF;
             },
             Instructions.RND_Vx_Byte => |i| {
                 const rand = self.rng.random();
@@ -299,8 +301,6 @@ pub const System = struct {
             Instructions.DRW_Vx_Vy_N => |i| {
                 const x_coord: u8 = self.v[i.vx];
                 const y_coord: u8 = self.v[i.vy];
-
-                std.log.debug("DRW x={}, y={} n={}", .{ x_coord, y_coord, i.n });
 
                 self.v[0xF] = 0; // Clear the VF register.
                 for (0..i.n) |y| {
@@ -346,10 +346,12 @@ pub const System = struct {
                 @memcpy(self.mem[self.i .. self.i + 3], bcd[0..3]);
             },
             Instructions.LD_ArrI_Vx => |vx| {
-                @memcpy(self.mem[self.i..], self.v[0..vx]);
+                // TODO: Check memory boundry.
+                @memcpy(self.mem[self.i..][0..vx], self.v[0..vx]);
             },
             Instructions.LD_Vx_ArrI => |vx| {
-                @memcpy(self.v[0..vx], self.mem[self.i..]);
+                // TODO: Check memory boundry.
+                @memcpy(self.v[0..vx], self.mem[self.i..][0..vx]);
             },
             Instructions.UNKNOWN => {
                 std.log.warn("Unknown instruction: 0x{X:0>4}", .{ins_raw});
