@@ -347,11 +347,11 @@ pub const System = struct {
             },
             Instructions.LD_ArrI_Vx => |vx| {
                 // TODO: Check memory boundry.
-                @memcpy(self.mem[self.i..][0..vx], self.v[0..vx]);
+                @memcpy(self.mem[self.i..][0 .. vx + 1], self.v[0 .. vx + 1]);
             },
             Instructions.LD_Vx_ArrI => |vx| {
                 // TODO: Check memory boundry.
-                @memcpy(self.v[0..vx], self.mem[self.i..][0..vx]);
+                @memcpy(self.v[0 .. vx + 1], self.mem[self.i..][0 .. vx + 1]);
             },
             Instructions.UNKNOWN => {
                 std.log.warn("Unknown instruction: 0x{X:0>4}", .{ins_raw});
