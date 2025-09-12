@@ -7,8 +7,11 @@ const STACK_LEN = 16;
 const FONT_LEN = 5 * 16;
 const FONT_ADDR = 0x0050;
 
-const DISPLAY_WIDTH = 32;
-const DISPLAY_HEIGHT = 16;
+const DISPLAY_WIDTH = 64;
+const DISPLAY_HEIGHT = 32;
+
+const DEFAULT_PIXEL_OFF = 0x000000FF;
+const DEFAULT_PIXEL_ON = 0xFFFFFFFF;
 
 const VxKK = struct { vx: u8, kk: u8 };
 const VxVy = struct { vx: u8, vy: u8 };
@@ -118,7 +121,7 @@ const Instructions = union(enum) {
 
 pub const System = struct {
     mem: [MEMORY_LEN]u8 = [_]u8{0} ** MEMORY_LEN,
-    display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u8 = [_]u8{0} ** (DISPLAY_WIDTH * DISPLAY_HEIGHT),
+    display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u32 = [_]u32{0} ** (DISPLAY_WIDTH * DISPLAY_HEIGHT),
     stack: [STACK_LEN]u16,
     font: [FONT_LEN]u8 = [_]u8{
         0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -147,9 +150,26 @@ pub const System = struct {
     dt: u8 = 0,
     st: u8 = 0,
 
+    // Display colours (R8G8B8A8)
+    display_width: u16 = DISPLAY_WIDTH,
+    display_height: u16 = DISPLAY_HEIGHT,
+    display_pixel_off: u32 = DEFAULT_PIXEL_OFF,
+    display_pixel_on: u32 = DEFAULT_PIXEL_ON,
+
+    rng: std.Random.DefaultPrng,
+
+    pub fn init() System {
+        const rng = std.Random.DefaultPrng.init(blk: {
+            var seed: u64 = undefined;
+            std.crypto.random.bytes(std.mem.asBytes(&seed));
+            break :blk seed;
+        });
+        return std.mem.zeroInit(System, .{ .rng = rng });
+    }
+
     pub fn reset(self: *System) void {
         @memset(self.mem[0..], 0);
-        @memset(self.display[0..], 0);
+        @memset(self.display[0..], self.display_pixel_off);
         @memset(self.v[0..], 0);
         @memset(self.stack[0..], 0);
         @memcpy(self.mem[FONT_ADDR..][0..FONT_LEN], self.font[0..]);
@@ -161,7 +181,15 @@ pub const System = struct {
         self.st = 0;
     }
 
-    pub fn load_program(self: *System, program: []const u16) void {
+    pub fn readProgram(self: *System, input: *std.io.Reader) !void {
+        self.reset();
+        input.readSliceAll(self.mem[0x200..]) catch |err| switch (err) {
+            error.EndOfStream => {},
+            else => return err,
+        };
+    }
+
+    pub fn loadProgram(self: *System, program: []const u16) void {
         self.reset();
 
         for (program, 0..) |ins, idx| {
@@ -177,14 +205,14 @@ pub const System = struct {
     pub fn tick(self: *System) void {
         // Fetch the instruction
         const ins_raw = std.mem.readInt(u16, self.mem[self.pc..][0..2], .big);
-        std.debug.print("instruction: 0x{X:0>4}, pc=0x{X:0>4}\n", .{ ins_raw, self.pc });
+        std.log.debug("instruction: 0x{X:0>4}, pc=0x{X:0>4}", .{ ins_raw, self.pc });
         // Decode the instruction
         const ins = Instructions.decode(ins_raw);
 
-        self.pc += 2;
+        self.pc = (self.pc + 2) % 0x0FFF;
         switch (ins) {
             Instructions.CLS => {
-                @memset(self.display[0..], 0);
+                @memset(self.display[0..], self.display_pixel_off);
             },
             Instructions.RET => {
                 self.sp -= 1;
@@ -264,8 +292,40 @@ pub const System = struct {
             Instructions.JP_V0_Addr => |nnn| {
                 self.pc = nnn + self.v[0];
             },
-            Instructions.RND_Vx_Byte => |_| {},
-            Instructions.DRW_Vx_Vy_N => |_| {},
+            Instructions.RND_Vx_Byte => |i| {
+                const rand = self.rng.random();
+                self.v[i.vx] = rand.int(u8) & i.kk;
+            },
+            Instructions.DRW_Vx_Vy_N => |i| {
+                const x_coord: u8 = self.v[i.vx];
+                const y_coord: u8 = self.v[i.vy];
+
+                std.log.debug("DRW x={}, y={} n={}", .{ x_coord, y_coord, i.n });
+
+                self.v[0xF] = 0; // Clear the VF register.
+                for (0..i.n) |y| {
+                    var spriteRow: u8 = self.mem[self.i + y];
+                    const row = (y_coord + y) % self.display_height;
+
+                    var x: u8 = 0;
+                    while (x < 8) : (x += 1) {
+                        const spritePixel = (spriteRow & 0x80) >> 7;
+                        const col = (x_coord + x) % self.display_width;
+                        const displayPixel: *u32 = &self.display[row * self.display_width + col];
+
+                        if (spritePixel == 1) {
+                            if (displayPixel.* == self.display_pixel_on) {
+                                displayPixel.* = self.display_pixel_off;
+                                self.v[0xF] = 1;
+                            } else {
+                                displayPixel.* = self.display_pixel_on;
+                            }
+                        }
+
+                        spriteRow <<= 1;
+                    }
+                }
+            },
             Instructions.SKP_Vx => |_| {},
             Instructions.SKNP_Vx => |_| {},
             Instructions.LD_DT_Vx => |vx| {
@@ -292,7 +352,7 @@ pub const System = struct {
                 @memcpy(self.v[0..vx], self.mem[self.i..]);
             },
             Instructions.UNKNOWN => {
-                std.debug.print("Uknown instruction: 0x{X:0>4}\n", .{ins_raw});
+                std.log.warn("Unknown instruction: 0x{X:0>4}", .{ins_raw});
             },
         }
     }
@@ -309,14 +369,14 @@ test "cls instruction clears display" {
         0x00E0, // CLS
     };
 
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(program[0..]);
+    var sys = System.init();
+    sys.loadProgram(program[0..]);
 
     @memset(sys.display[0..], 1);
 
     sys.tick();
 
-    try expect(std.mem.allEqual(u8, sys.display[0..], 0));
+    try expect(std.mem.allEqual(u32, sys.display[0..], sys.display_pixel_off));
 }
 
 test "addition" {
@@ -330,8 +390,8 @@ test "addition" {
         0x8344, // ADD V3, V4
     };
 
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(program[0..]);
+    var sys = System.init();
+    sys.loadProgram(program[0..]);
 
     for (program) |_| {
         sys.tick();
@@ -353,8 +413,8 @@ test "basic load instructions" {
         0xF218, // LD ST, V2
     };
 
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(program[0..]);
+    var sys = System.init();
+    sys.loadProgram(program[0..]);
 
     for (program) |_| {
         sys.tick();
@@ -373,8 +433,8 @@ test "load bcd" {
         0xF133, // LD B, V1
     };
 
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(program[0..]);
+    var sys = System.init();
+    sys.loadProgram(program[0..]);
 
     for (program) |_| {
         sys.tick();
@@ -407,8 +467,8 @@ test "skipping instructions" {
         0x00E0, // CLS
     };
 
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(program[0..]);
+    var sys = System.init();
+    sys.loadProgram(program[0..]);
 
     for (0..program.len - 4) |_| {
         sys.tick();
@@ -432,8 +492,8 @@ test "jumps and routine calling" {
         0x6FFF, // LD VF, 0xFF  ; fail if too many ticks are executed
     };
 
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(program[0..]);
+    var sys = System.init();
+    sys.loadProgram(program[0..]);
 
     for (1..9) |_| {
         sys.tick();
@@ -448,8 +508,8 @@ test "jumps and routine calling" {
 }
 
 test "bit manipulation instructions" {
-    var sys = std.mem.zeroInit(System, .{});
-    sys.load_program(&[_]u16{
+    var sys = System.init();
+    sys.loadProgram(&[_]u16{
         0x60FF, // LD V0, 0xCC
         0x61CC, // LD V1, 0xFF
         0x8012, // AND V0, V1
@@ -466,7 +526,7 @@ test "bit manipulation instructions" {
     try std.testing.expectEqual(0xFF, sys.v[2]);
     try std.testing.expectEqual(0x55, sys.v[4]);
 
-    sys.load_program(&[_]u16{
+    sys.loadProgram(&[_]u16{
         0x60FF, // LD V0, 0xFF
         0x615E, // LD V1, 0x5F
         0x8006, // SHR V0
