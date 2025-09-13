@@ -18,41 +18,41 @@ const VxVy = struct { vx: u8, vy: u8 };
 const VxVyN = struct { vx: u8, vy: u8, n: u8 };
 
 const Instructions = union(enum) {
-    CLS,
-    RET,
-    JP: u16,
-    CALL: u16,
-    SE_Vx_Byte: VxKK,
-    SNE_Vx_Byte: VxKK,
-    SE_Vx_Vy: VxVy,
-    LD_Vx_Byte: VxKK,
-    ADD_Vx_Byte: VxKK,
-    LD_Vx_Vy: VxVy,
-    OR_Vx_Vy: VxVy,
-    AND_Vx_Vy: VxVy,
-    XOR_Vx_Vy: VxVy,
-    ADD_Vx_Vy: VxVy,
-    SUB_Vx_Vy: VxVy,
-    SHR_Vx_Vy: VxVy,
-    SUBN_Vx_Vy: VxVy,
-    SHL_Vx_Vy: VxVy,
-    SNE_Vx_Vy: VxVy,
-    LD_I_Addr: u16,
-    JP_V0_Addr: u16,
-    RND_Vx_Byte: VxKK,
-    DRW_Vx_Vy_N: VxVyN,
-    SKP_Vx: u8,
-    SKNP_Vx: u8,
-    LD_Vx_DT: u8,
-    LD_DT_Vx: u8,
-    LD_Vx_K: u8,
-    LD_ST_Vx: u8,
-    ADD_I_Vx: u8,
-    LD_F_Vx: u8,
-    LD_B_Vx: u8,
-    LD_ArrI_Vx: u8,
-    LD_Vx_ArrI: u8,
-    UNKNOWN,
+    OP_00E0,
+    OP_00EE,
+    OP_1NNN: u16,
+    OP_2NNN: u16,
+    OP_3XKK: VxKK,
+    OP_4XKK: VxKK,
+    OP_5XY0: VxVy,
+    OP_6XKK: VxKK,
+    OP_7XKK: VxKK,
+    OP_8XY0: VxVy,
+    OP_8XY1: VxVy,
+    OP_8XY2: VxVy,
+    OP_8XY3: VxVy,
+    OP_8XY4: VxVy,
+    OP_8XY5: VxVy,
+    OP_8XY6: VxVy,
+    OP_8XY7: VxVy,
+    OP_8XYE: VxVy,
+    OP_9XY0: VxVy,
+    OP_ANNN: u16,
+    OP_BNNN: u16,
+    OP_CXKK: VxKK,
+    OP_DXYN: VxVyN,
+    OP_EX9E: u8,
+    OP_EXA1: u8,
+    OP_FX07: u8,
+    OP_FX15: u8,
+    OP_FX0A: u8,
+    OP_FX18: u8,
+    OP_FX1E: u8,
+    OP_FX29: u8,
+    OP_FX33: u8,
+    OP_FX55: u8,
+    OP_FX65: u8,
+    OP_UNKNOWN,
 
     pub fn decode(ins: u16) Instructions {
         const x: u8 = @truncate((ins & 0x0F00) >> 8);
@@ -63,58 +63,58 @@ const Instructions = union(enum) {
 
         return switch (ins & 0xF000) {
             0x0000 => switch (ins) {
-                0x00E0 => Instructions.CLS,
-                0x00EE => Instructions.RET,
-                else => Instructions.UNKNOWN,
+                0x00E0 => Instructions.OP_00E0,
+                0x00EE => Instructions.OP_00EE,
+                else => Instructions.OP_UNKNOWN,
             },
-            0x1000 => Instructions{ .JP = nnn },
-            0x2000 => Instructions{ .CALL = nnn },
-            0x3000 => Instructions{ .SE_Vx_Byte = .{ .vx = x, .kk = kk } },
-            0x4000 => Instructions{ .SNE_Vx_Byte = .{ .vx = x, .kk = kk } },
+            0x1000 => Instructions{ .OP_1NNN = nnn },
+            0x2000 => Instructions{ .OP_2NNN = nnn },
+            0x3000 => Instructions{ .OP_3XKK = .{ .vx = x, .kk = kk } },
+            0x4000 => Instructions{ .OP_4XKK = .{ .vx = x, .kk = kk } },
             0x5000 => switch (ins & 0xF00F) {
-                0x5000 => Instructions{ .SE_Vx_Vy = .{ .vx = x, .vy = y } },
-                else => Instructions.UNKNOWN,
+                0x5000 => Instructions{ .OP_5XY0 = .{ .vx = x, .vy = y } },
+                else => Instructions.OP_UNKNOWN,
             },
-            0x6000 => Instructions{ .LD_Vx_Byte = .{ .vx = x, .kk = kk } },
-            0x7000 => Instructions{ .ADD_Vx_Byte = .{ .vx = x, .kk = kk } },
+            0x6000 => Instructions{ .OP_6XKK = .{ .vx = x, .kk = kk } },
+            0x7000 => Instructions{ .OP_7XKK = .{ .vx = x, .kk = kk } },
             0x8000 => switch (ins & 0xF00F) {
-                0x8000 => Instructions{ .LD_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8001 => Instructions{ .OR_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8002 => Instructions{ .AND_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8003 => Instructions{ .XOR_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8004 => Instructions{ .ADD_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8005 => Instructions{ .SUB_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8006 => Instructions{ .SHR_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x8007 => Instructions{ .SUBN_Vx_Vy = .{ .vx = x, .vy = y } },
-                0x800E => Instructions{ .SHL_Vx_Vy = .{ .vx = x, .vy = y } },
-                else => Instructions.UNKNOWN,
+                0x8000 => Instructions{ .OP_8XY0 = .{ .vx = x, .vy = y } },
+                0x8001 => Instructions{ .OP_8XY1 = .{ .vx = x, .vy = y } },
+                0x8002 => Instructions{ .OP_8XY2 = .{ .vx = x, .vy = y } },
+                0x8003 => Instructions{ .OP_8XY3 = .{ .vx = x, .vy = y } },
+                0x8004 => Instructions{ .OP_8XY4 = .{ .vx = x, .vy = y } },
+                0x8005 => Instructions{ .OP_8XY5 = .{ .vx = x, .vy = y } },
+                0x8006 => Instructions{ .OP_8XY6 = .{ .vx = x, .vy = y } },
+                0x8007 => Instructions{ .OP_8XY7 = .{ .vx = x, .vy = y } },
+                0x800E => Instructions{ .OP_8XYE = .{ .vx = x, .vy = y } },
+                else => Instructions.OP_UNKNOWN,
             },
             0x9000 => switch (ins & 0xF00F) {
-                0x9000 => Instructions{ .SNE_Vx_Vy = .{ .vx = x, .vy = y } },
-                else => Instructions.UNKNOWN,
+                0x9000 => Instructions{ .OP_9XY0 = .{ .vx = x, .vy = y } },
+                else => Instructions.OP_UNKNOWN,
             },
-            0xA000 => Instructions{ .LD_I_Addr = nnn },
-            0xB000 => Instructions{ .JP_V0_Addr = nnn },
-            0xC000 => Instructions{ .RND_Vx_Byte = .{ .vx = x, .kk = kk } },
-            0xD000 => Instructions{ .DRW_Vx_Vy_N = .{ .vx = x, .vy = y, .n = n } },
+            0xA000 => Instructions{ .OP_ANNN = nnn },
+            0xB000 => Instructions{ .OP_BNNN = nnn },
+            0xC000 => Instructions{ .OP_CXKK = .{ .vx = x, .kk = kk } },
+            0xD000 => Instructions{ .OP_DXYN = .{ .vx = x, .vy = y, .n = n } },
             0xE000 => switch (ins & 0xF0FF) {
-                0xE09E => Instructions{ .SKP_Vx = x },
-                0xE0A1 => Instructions{ .SKNP_Vx = x },
-                else => Instructions.UNKNOWN,
+                0xE09E => Instructions{ .OP_EX9E = x },
+                0xE0A1 => Instructions{ .OP_EXA1 = x },
+                else => Instructions.OP_UNKNOWN,
             },
             0xF000 => switch (ins & 0xF0FF) {
-                0xF007 => Instructions{ .LD_Vx_DT = x },
-                0xF00A => Instructions{ .LD_Vx_K = x },
-                0xF015 => Instructions{ .LD_DT_Vx = x },
-                0xF018 => Instructions{ .LD_ST_Vx = x },
-                0xF01E => Instructions{ .ADD_I_Vx = x },
-                0xF029 => Instructions{ .LD_F_Vx = x },
-                0xF033 => Instructions{ .LD_B_Vx = x },
-                0xF055 => Instructions{ .LD_ArrI_Vx = x },
-                0xF065 => Instructions{ .LD_Vx_ArrI = x },
-                else => Instructions.UNKNOWN,
+                0xF007 => Instructions{ .OP_FX07 = x },
+                0xF00A => Instructions{ .OP_FX0A = x },
+                0xF015 => Instructions{ .OP_FX15 = x },
+                0xF018 => Instructions{ .OP_FX18 = x },
+                0xF01E => Instructions{ .OP_FX1E = x },
+                0xF029 => Instructions{ .OP_FX29 = x },
+                0xF033 => Instructions{ .OP_FX33 = x },
+                0xF055 => Instructions{ .OP_FX55 = x },
+                0xF065 => Instructions{ .OP_FX65 = x },
+                else => Instructions.OP_UNKNOWN,
             },
-            else => Instructions.UNKNOWN,
+            else => Instructions.OP_UNKNOWN,
         };
     }
 };
@@ -160,7 +160,8 @@ pub const System = struct {
     rng: std.Random.DefaultPrng,
 
     // Quirks
-    quirk_shift: bool = false, // If true, take VX as both input and output for shift instructions.
+    /// If true, take VX as both input and output for shift instructions. Else use VY for input and output result to VX.
+    quirk_shift: bool = false,
 
     pub fn init() System {
         const rng = std.Random.DefaultPrng.init(blk: {
@@ -206,75 +207,88 @@ pub const System = struct {
         }
     }
 
-    pub fn tick(self: *System) void {
-        // Fetch the instruction
-        const ins_raw = std.mem.readInt(u16, self.mem[self.pc..][0..2], .big);
-        std.log.debug("instruction: 0x{X:0>4}, pc=0x{X:0>4}", .{ ins_raw, self.pc });
+    pub fn runOp(self: *System, op: u16) void {
         // Decode the instruction
-        const ins = Instructions.decode(ins_raw);
+        const ins = Instructions.decode(op);
 
         self.pc = (self.pc + 2) % 0x0FFF;
         switch (ins) {
-            Instructions.CLS => {
+            Instructions.OP_00E0 => {
+                // CLS: Clear display
                 @memset(self.display[0..], self.display_pixel_off);
             },
-            Instructions.RET => {
+            Instructions.OP_00EE => {
+                // RET: Return from subroutine
                 self.sp -= 1;
                 self.pc = self.stack[self.sp];
             },
-            Instructions.JP => |nnn| {
+            Instructions.OP_1NNN => |nnn| {
+                // JP addr
                 self.pc = (nnn & 0x0FFF);
             },
-            Instructions.CALL => |nnn| {
-                self.stack[self.sp] = self.pc; // Undo the early increment for the program counter.
+            Instructions.OP_2NNN => |nnn| {
+                // CALL addr
+                self.stack[self.sp] = self.pc;
                 self.sp += 1;
                 self.pc = (nnn & 0x0FFF);
             },
-            Instructions.SE_Vx_Byte => |i| {
+            Instructions.OP_3XKK => |i| {
+                // SE Vx, byte
                 if (self.v[i.vx] == i.kk) {
                     self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
-            Instructions.SNE_Vx_Byte => |i| {
+            Instructions.OP_4XKK => |i| {
+                // SNE Vx, byte
                 if (self.v[i.vx] != i.kk) {
                     self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
-            Instructions.SE_Vx_Vy => |i| {
+            Instructions.OP_5XY0 => |i| {
+                // SE Vx, Vy
                 if (self.v[i.vx] == self.v[i.vy]) {
                     self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
-            Instructions.LD_Vx_Byte => |i| {
+            Instructions.OP_6XKK => |i| {
+                // LD VX, byte
                 self.v[i.vx] = i.kk;
             },
-            Instructions.ADD_Vx_Byte => |i| {
+            Instructions.OP_7XKK => |i| {
+                // ADD Vx, byte
                 const res, _ = @addWithOverflow(self.v[i.vx], i.kk);
                 self.v[i.vx] = res;
             },
-            Instructions.LD_Vx_Vy => |i| {
+            Instructions.OP_8XY0 => |i| {
+                // LD Vx, Vy
                 self.v[i.vx] = self.v[i.vy];
             },
-            Instructions.OR_Vx_Vy => |i| {
+            Instructions.OP_8XY1 => |i| {
+                // LD OR Vx, Vy
                 self.v[i.vx] |= self.v[i.vy];
             },
-            Instructions.AND_Vx_Vy => |i| {
+            Instructions.OP_8XY2 => |i| {
+                // AND Vx, Vy
                 self.v[i.vx] &= self.v[i.vy];
             },
-            Instructions.XOR_Vx_Vy => |i| {
+            Instructions.OP_8XY3 => |i| {
+                // XOR Vx, Vy
                 self.v[i.vx] ^= self.v[i.vy];
             },
-            Instructions.ADD_Vx_Vy => |i| {
+            Instructions.OP_8XY4 => |i| {
+                // ADD Vx, Vy
                 const res, const carry = @addWithOverflow(self.v[i.vx], self.v[i.vy]);
                 self.v[i.vx] = res;
                 self.v[0xF] = carry;
             },
-            Instructions.SUB_Vx_Vy => |i| {
+            Instructions.OP_8XY5 => |i| {
+                // SUB Vx, Vy
                 const res, const carry = @subWithOverflow(self.v[i.vx], self.v[i.vy]);
                 self.v[i.vx] = res;
                 self.v[0xF] = if (carry == 1) 0 else 1;
             },
-            Instructions.SHR_Vx_Vy => |i| {
+            Instructions.OP_8XY6 => |i| {
+                // SHR Vx, Vy
                 if (!self.quirk_shift) {
                     self.v[i.vx] = self.v[i.vy];
                 }
@@ -283,12 +297,14 @@ pub const System = struct {
                 self.v[i.vx] >>= 1;
                 self.v[0xF] = carry;
             },
-            Instructions.SUBN_Vx_Vy => |i| {
+            Instructions.OP_8XY7 => |i| {
+                // SUBN Vx, Vy
                 const res, const carry = @subWithOverflow(self.v[i.vy], self.v[i.vx]);
                 self.v[i.vx] = res;
                 self.v[0xF] = if (carry == 1) 0 else 1;
             },
-            Instructions.SHL_Vx_Vy => |i| {
+            Instructions.OP_8XYE => |i| {
+                // SHL Vx, Vy
                 if (!self.quirk_shift) {
                     self.v[i.vx] = self.v[i.vy];
                 }
@@ -297,22 +313,27 @@ pub const System = struct {
                 self.v[i.vx] = res;
                 self.v[0xF] = carry;
             },
-            Instructions.SNE_Vx_Vy => |i| {
+            Instructions.OP_9XY0 => |i| {
+                // SNE Vx, Vy
                 if (self.v[i.vx] != self.v[i.vy]) {
                     self.pc = (self.pc + 2) % 0x0FFF;
                 }
             },
-            Instructions.LD_I_Addr => |nnn| {
+            Instructions.OP_ANNN => |nnn| {
+                // LD I, addr
                 self.i = nnn;
             },
-            Instructions.JP_V0_Addr => |nnn| {
+            Instructions.OP_BNNN => |nnn| {
+                // JP V0, addr
                 self.pc = (nnn + self.v[0]) % 0x0FFF;
             },
-            Instructions.RND_Vx_Byte => |i| {
+            Instructions.OP_CXKK => |i| {
+                // RND Vx, byte
                 const rand = self.rng.random();
                 self.v[i.vx] = rand.int(u8) & i.kk;
             },
-            Instructions.DRW_Vx_Vy_N => |i| {
+            Instructions.OP_DXYN => |i| {
+                // DRW Vx, Vy, n
                 const x_coord: u8 = self.v[i.vx];
                 const y_coord: u8 = self.v[i.vy];
 
@@ -340,43 +361,65 @@ pub const System = struct {
                     }
                 }
             },
-            Instructions.SKP_Vx => |_| {},
-            Instructions.SKNP_Vx => |_| {},
-            Instructions.LD_DT_Vx => |vx| {
-                self.dt = self.v[vx];
+            Instructions.OP_EX9E => |_| {
+                // SKP Vx
             },
-            Instructions.LD_Vx_DT => |vx| {
+            Instructions.OP_EXA1 => |_| {
+                // SKNP Vx
+            },
+            Instructions.OP_FX07 => |vx| {
+                // LD Vx, DT
                 self.v[vx] = self.dt;
             },
-            Instructions.LD_Vx_K => |_| {},
-            Instructions.LD_ST_Vx => |vx| {
+            Instructions.OP_FX0A => |_| {
+                // LD Vx, K
+            },
+            Instructions.OP_FX15 => |vx| {
+                // LD DT, Vx
+                self.dt = self.v[vx];
+            },
+            Instructions.OP_FX18 => |vx| {
+                // LD ST, Vx
                 self.st = self.v[vx];
             },
-            Instructions.ADD_I_Vx => |vx| {
+            Instructions.OP_FX1E => |vx| {
                 self.i += self.v[vx];
                 if (self.i >= 0x1000) {
                     self.v[0xF] = 1;
                     self.i &= 0x0FFF;
                 }
             },
-            Instructions.LD_F_Vx => |_| {},
-            Instructions.LD_B_Vx => |vx| {
+            Instructions.OP_FX29 => |_| {
+                // LD F, Vx
+            },
+            Instructions.OP_FX33 => |vx| {
+                // LD B, Vx
                 const v = self.v[vx];
                 const bcd = [_]u8{ v / 100, (v / 10) % 10, v % 10 };
                 @memcpy(self.mem[self.i .. self.i + 3], bcd[0..3]);
             },
-            Instructions.LD_ArrI_Vx => |vx| {
+            Instructions.OP_FX55 => |vx| {
+                // LD [I], Vx
                 // TODO: Check memory boundry.
                 @memcpy(self.mem[self.i..][0 .. vx + 1], self.v[0 .. vx + 1]);
             },
-            Instructions.LD_Vx_ArrI => |vx| {
+            Instructions.OP_FX65 => |vx| {
+                // LD Vx, [I]
                 // TODO: Check memory boundry.
                 @memcpy(self.v[0 .. vx + 1], self.mem[self.i..][0 .. vx + 1]);
             },
-            Instructions.UNKNOWN => {
-                std.log.warn("Unknown instruction: 0x{X:0>4}", .{ins_raw});
+            Instructions.OP_UNKNOWN => {
+                std.log.warn("Unknown instruction: 0x{X:0>4}", .{op});
             },
         }
+    }
+
+    pub fn tick(self: *System) void {
+        // Fetch the instruction
+        const op = std.mem.readInt(u16, self.mem[self.pc..][0..2], .big);
+        std.log.debug("instruction: 0x{X:0>4}, pc=0x{X:0>4}", .{ op, self.pc });
+
+        self.runOp(op);
     }
 
     pub fn tickN(self: *System, count: usize) void {
@@ -386,189 +429,278 @@ pub const System = struct {
     }
 };
 
-test "cls instruction clears display" {
-    const program = [_]u16{
-        0x00E0, // CLS
-    };
-
+test "op_00e0" {
     var sys = System.init();
-    sys.loadProgram(program[0..]);
-
     @memset(sys.display[0..], 1);
 
-    sys.tick();
+    sys.runOp(0x00E0);
 
     try expect(std.mem.allEqual(u32, sys.display[0..], sys.display_pixel_off));
 }
 
-test "addition" {
-    const program = [_]u16{
-        0x7020, // ADD V0, 0x20 ; Test basic addition
-        0x7130, // ADD V1, 0x30
-        0x7220, // ADD V2, 0x20
-        0x8214, // ADD V2, V1
-        0x73FF, // ADD V3, 0xFF ; Test overflow is detected.
-        0x7410, // ADD V4, 0x10
-        0x8344, // ADD V3, V4
-    };
-
+test "op_00ee" {
     var sys = System.init();
-    sys.loadProgram(program[0..]);
+    sys.sp = 5;
+    sys.stack[4] = 0x567;
 
-    for (program) |_| {
-        sys.tick();
-    }
-
-    try expect(sys.v[0] == 0x20);
-    try expect(sys.v[1] == 0x30);
-    try expect(sys.v[2] == 0x50);
-    try expect(sys.v[3] == 0x0F);
-    try expect(sys.v[15] == 0x01);
+    sys.runOp(0x00EE);
+    try expect(sys.sp == 4);
+    try expect(sys.pc == 0x567);
 }
 
-test "basic load instructions" {
-    const program = [_]u16{
-        0x60FF, // LD V0, 0xFF
-        0x8100, // LD V1, V0
-        0xF115, // LD DT, V1
-        0xF207, // LD V2, DT
-        0xF218, // LD ST, V2
-    };
-
+test "op_1nnn" {
     var sys = System.init();
-    sys.loadProgram(program[0..]);
-
-    for (program) |_| {
-        sys.tick();
-    }
-
-    try expect(sys.v[0] == 0xFF);
-    try expect(sys.v[1] == 0xFF);
-    try expect(sys.dt == 0xFF);
-    try expect(sys.st == 0xFF);
+    sys.runOp(0x1789);
+    try expect(sys.pc == 0x789);
 }
 
-test "load bcd" {
-    const program = [_]u16{
-        0x617B, // LD V1, 123
-        0xA400, // LD I, 0x400
-        0xF133, // LD B, V1
-    };
-
+test "op_2nnn" {
     var sys = System.init();
-    sys.loadProgram(program[0..]);
+    sys.pc = 0x123;
+    sys.sp = 3;
+    sys.runOp(0x2789);
 
-    for (program) |_| {
-        sys.tick();
-    }
-
-    try std.testing.expectEqualSlices(
-        u8,
-        &[_]u8{ 1, 2, 3 },
-        sys.mem[0x400..0x403],
-    );
+    try expect(sys.pc == 0x789);
+    try expect(sys.sp == 4);
+    try expect(sys.stack[3] == 0x125);
 }
 
-test "skipping instructions" {
-    const program = [_]u16{
-        0x61FE, // LD V1, 0xFE
-        0x62FE, // LD V2, 0xFE
-        0x31FE, // SE V1, 0xFF
-        0x63FF, // LD V3, 0xFF
-        0x42FF, // SNE V2, 0xFE
-        0x63FF, // LD V3, 0xFF
-        0x5120, // SE V1, V2
-        0x63FF, // LD V3, 0xFF
-        0x64FF, // LD V4, 0xFF
-        0x9340, // SNE V3, V4
-        0x63FF, // LD V3, 0xFF
-        0x00E0, // CLS
-        0x00E0, // CLS
-        0x00E0, // CLS
-        0x00E0, // CLS
-        0x00E0, // CLS
-    };
-
-    var sys = System.init();
-    sys.loadProgram(program[0..]);
-
-    for (0..program.len - 4) |_| {
-        sys.tick();
+test "op_3xkk" {
+    {
+        var sys = System.init();
+        sys.runOp(0x3201);
+        try std.testing.expectEqual(0x202, sys.pc);
     }
 
-    try std.testing.expectEqual(0x00, sys.v[3]);
+    {
+        var sys1 = System.init();
+        sys1.runOp(0x3200);
+        try std.testing.expectEqual(0x204, sys1.pc);
+    }
 }
 
-test "jumps and routine calling" {
-    const program = [_]u16{
-        0x2204, // CALL 0x204
-        0x120A, // JP 0x20A
-        0x61FF, // LD V1, 0xFF ; routine to set V1 to 0xFF
-        0x00EE, // RET
-        0x6FFF, // LD VF, 0xFF  ; check RET goes back.
-        0x62FF, // LD V2, 0xFF  ; target for JP at 0x202
-        0x6012, // LD V0, 0x12  ; Load offset for JP
-        0xB200, // JP V0, 0x200
-        0x6EFF, // LD VE, 0xFF  ; check JP, V0 works.
-        0x63FF, // LD V3, 0xFF  ; target for JP V0
-        0x6FFF, // LD VF, 0xFF  ; fail if too many ticks are executed
-    };
-
+test "op_4xkk" {
     var sys = System.init();
-    sys.loadProgram(program[0..]);
+    sys.runOp(0x4300);
+    try std.testing.expectEqual(0x202, sys.pc);
 
-    for (1..9) |_| {
-        sys.tick();
+    var sys1 = System.init();
+    sys1.runOp(0x4412);
+    try std.testing.expectEqual(0x204, sys1.pc);
+}
+
+test "op_5xy0" {
+    {
+        var sys = System.init();
+        sys.v[1] = 22;
+        sys.runOp(0x5010);
+        try std.testing.expectEqual(0x202, sys.pc);
+    }
+    {
+        var sys = System.init();
+        sys.runOp(0x5450);
+        try std.testing.expectEqual(0x204, sys.pc);
+    }
+}
+
+test "op_6xkk" {
+    var sys = System.init();
+    sys.runOp(0x6255);
+    try std.testing.expectEqual(0x55, sys.v[2]);
+}
+
+test "op_7xkk" {
+    var sys = System.init();
+    sys.runOp(0x7477);
+    try std.testing.expectEqual(0x77, sys.v[4]);
+}
+
+test "op_8xy0" {
+    var sys = System.init();
+    sys.v[2] = 0x45;
+    sys.runOp(0x8120);
+    try std.testing.expectEqual(0x45, sys.v[1]);
+}
+
+test "op_8xy1" {
+    var sys = System.init();
+    sys.v[1] = 0x40;
+    sys.v[3] = 0x08;
+    sys.runOp(0x8131);
+    try std.testing.expectEqual(0x48, sys.v[1]);
+}
+
+test "op_8xy2" {
+    var sys = System.init();
+    sys.v[4] = 0xF0;
+    sys.v[5] = 0x82;
+    sys.runOp(0x8452);
+    try std.testing.expectEqual(0x80, sys.v[4]);
+}
+
+test "op_8xy3" {
+    var sys = System.init();
+    sys.v[7] = 0x0F;
+    sys.v[8] = 0xFF;
+    sys.runOp(0x8783);
+    try std.testing.expectEqual(0xF0, sys.v[7]);
+}
+
+test "op_8xy4" {
+    {
+        var sys = System.init();
+        sys.v[4] = 10;
+        sys.v[5] = 20;
+        sys.runOp(0x8454);
+        try std.testing.expectEqual(30, sys.v[4]);
+        try std.testing.expectEqual(0, sys.v[0xF]);
     }
 
-    try std.testing.expectEqual(0xFF, sys.v[1]);
-    try std.testing.expectEqual(0xFF, sys.v[2]);
-    try std.testing.expectEqual(0xFF, sys.v[3]);
+    {
+        var sys = System.init();
+        sys.v[6] = 255;
+        sys.v[7] = 10;
+        sys.runOp(0x8674);
 
-    try std.testing.expectEqual(0x00, sys.v[14]);
-    try std.testing.expectEqual(0x00, sys.v[15]);
+        try std.testing.expectEqual(9, sys.v[6]);
+        try std.testing.expectEqual(1, sys.v[0xF]);
+    }
 }
 
-test "bit manipulation instructions" {
+test "op_8xy5" {
+    {
+        var sys = System.init();
+        sys.v[6] = 70;
+        sys.v[7] = 50;
+        sys.runOp(0x8675);
+        try std.testing.expectEqual(20, sys.v[6]);
+        try std.testing.expectEqual(1, sys.v[0xF]);
+    }
+    {
+        var sys = System.init();
+        sys.v[8] = 0;
+        sys.v[9] = 20;
+        sys.runOp(0x8895);
+        try std.testing.expectEqual(-20, @as(i8, @bitCast(sys.v[8])));
+        try std.testing.expectEqual(0, sys.v[0xF]);
+    }
+}
+
+test "op_8xy6" {
     var sys = System.init();
-    sys.loadProgram(&[_]u16{
-        0x60FF, // LD V0, 0xCC
-        0x61CC, // LD V1, 0xFF
-        0x8012, // AND V0, V1
-        0x62AA, // LD V2, 0xCC
-        0x6355, // LD V3, 0x55
-        0x8231, // OR V2, V3
-        0x64FF, // LD V4, 0xFF
-        0x65AA, // LD V5, 0xAA
-        0x8453, // XOR V4, V5
-    });
-    sys.tickN(9);
+    sys.v[2] = 0x81;
+    sys.runOp(0x8026);
+    try std.testing.expectEqual(0x40, sys.v[0]);
+    try std.testing.expectEqual(1, sys.v[0xF]);
+}
 
-    try std.testing.expectEqual(0xCC, sys.v[0]);
-    try std.testing.expectEqual(0xFF, sys.v[2]);
-    try std.testing.expectEqual(0x55, sys.v[4]);
+test "op_8xy7" {
+    {
+        var sys = System.init();
+        sys.v[4] = 50;
+        sys.v[5] = 30;
+        sys.runOp(0x8457);
+        try std.testing.expectEqual(-20, @as(i8, @bitCast(sys.v[4])));
+        try std.testing.expectEqual(0, sys.v[0xF]);
+    }
+    {
+        var sys = System.init();
+        sys.v[0] = 10;
+        sys.v[1] = 30;
+        sys.runOp(0x8017);
+        try std.testing.expectEqual(20, sys.v[0]);
+        try std.testing.expectEqual(1, sys.v[0xF]);
+    }
+}
 
-    sys.loadProgram(&[_]u16{
-        0x60FF, // LD V0, 0xFF
-        0x615E, // LD V1, 0x5F
-        0x8006, // SHR V0
-        0x8106, // SHR V1
-        0x60FF, // LD V0, 0xFF
-        0x617F, // LD V1, 0x7F
-        0x800E, // SHL V0
-        0x810E, // SHL V1
-    });
+test "op_8xye" {
+    var sys = System.init();
+    sys.v[1] = 0x84;
+    sys.runOp(0x801E);
+    try std.testing.expectEqual(0x08, sys.v[0]);
+}
 
-    sys.tickN(3);
-    try std.testing.expectEqual(0x7F, sys.v[0]);
-    try std.testing.expectEqual(0x01, sys.v[0xF]);
-    sys.tick();
-    try std.testing.expectEqual(0x2F, sys.v[1]);
-    try std.testing.expectEqual(0x00, sys.v[0xF]);
-    sys.tickN(3);
-    try std.testing.expectEqual(0xFE, sys.v[0]);
-    try std.testing.expectEqual(0x01, sys.v[0xF]);
-    sys.tick();
-    try std.testing.expectEqual(0xFE, sys.v[1]);
-    try std.testing.expectEqual(0x00, sys.v[0xf]);
+test "op_annn" {
+    var sys = System.init();
+    sys.runOp(0xA456);
+    try std.testing.expectEqual(0x456, sys.i);
+}
+
+test "op_bnnn" {
+    var sys = System.init();
+    sys.v[0] = 0x25;
+    sys.runOp(0xB200);
+
+    try std.testing.expectEqual(0x225, sys.pc);
+}
+
+test "op_cxkk" {
+    var sys = System.init();
+    sys.runOp(0xC000);
+    try std.testing.expectEqual(sys.v[0], 0);
+}
+
+test "op_dxyn" {}
+
+test "op_ex9e" {}
+
+test "op_exa1" {}
+
+test "op_fx07" {
+    var sys = System.init();
+    sys.dt = 200;
+    sys.runOp(0xF207);
+
+    try std.testing.expectEqual(200, sys.v[2]);
+}
+
+test "op_fx0a" {}
+
+test "op_fx15" {
+    var sys = System.init();
+    sys.v[4] = 100;
+    sys.runOp(0xF415);
+
+    try std.testing.expectEqual(100, sys.v[4]);
+}
+
+test "op_fx18" {
+    var sys = System.init();
+    sys.v[6] = 50;
+    sys.runOp(0xF618);
+
+    try std.testing.expectEqual(50, sys.v[6]);
+}
+
+test "op_fx1e" {
+    var sys = System.init();
+    sys.v[5] = 0x10;
+    sys.runOp(0xF51E);
+    try std.testing.expectEqual(0x10, sys.i);
+}
+
+test "op_fx29" {}
+
+test "op_fx33" {
+    var sys = System.init();
+    sys.i = 0x600;
+    sys.v[2] = 123;
+    sys.runOp(0xF233);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 1, 2, 3 }, sys.mem[0x600..0x603]);
+}
+
+test "op_fx55" {
+    var sys = System.init();
+    sys.i = 0x800;
+    @memcpy(sys.v[0..4], &[_]u8{ 2, 4, 8, 16 });
+    sys.runOp(0xF455);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 2, 4, 8, 16, 0 }, sys.mem[0x800..0x805]);
+}
+
+test "op_fx65" {
+    var sys = System.init();
+    sys.i = 0x600;
+    @memcpy(sys.mem[0x600..0x604], &[_]u8{ 10, 20, 30, 40 });
+    sys.runOp(0xF465);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 10, 20, 30, 40, 0 }, sys.v[0..5]);
 }
