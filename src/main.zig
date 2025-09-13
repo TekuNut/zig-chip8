@@ -95,7 +95,7 @@ pub fn main() anyerror!void {
         rl.beginDrawing();
         defer rl.endDrawing();
 
-        rl.clearBackground(.black);
+        rl.clearBackground(rl.Color.fromInt(sys.display_pixel_off));
 
         // Copy the chip8 display into the image.
         for (0.., sys.display) |i, pixel| {

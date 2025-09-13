@@ -338,7 +338,13 @@ pub const System = struct {
             Instructions.LD_ST_Vx => |vx| {
                 self.st = self.v[vx];
             },
-            Instructions.ADD_I_Vx => |_| {},
+            Instructions.ADD_I_Vx => |vx| {
+                self.i += self.v[vx];
+                if (self.i >= 0x1000) {
+                    self.v[0xF] = 1;
+                    self.i &= 0x0FFF;
+                }
+            },
             Instructions.LD_F_Vx => |_| {},
             Instructions.LD_B_Vx => |vx| {
                 const v = self.v[vx];
