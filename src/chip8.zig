@@ -4,7 +4,8 @@ const expect = std.testing.expect;
 const MEMORY_LEN = 4096;
 const V_REGISTERS_LEN = 16;
 const STACK_LEN = 16;
-const FONT_LEN = 5 * 16;
+const FONT_SPRITE_LEN = 5;
+const FONT_LEN = FONT_SPRITE_LEN * 16;
 const FONT_ADDR = 0x0050;
 
 const DISPLAY_WIDTH = 64;
@@ -389,8 +390,9 @@ pub const System = struct {
                     self.i &= 0x0FFF;
                 }
             },
-            Instructions.OP_FX29 => |_| {
+            Instructions.OP_FX29 => |vx| {
                 // LD F, Vx
+                self.i = FONT_ADDR + self.v[vx] * FONT_SPRITE_LEN;
             },
             Instructions.OP_FX33 => |vx| {
                 // LD B, Vx
@@ -679,7 +681,12 @@ test "op_fx1e" {
     try std.testing.expectEqual(0x10, sys.i);
 }
 
-test "op_fx29" {}
+test "op_fx29" {
+    var sys = System.init();
+    sys.v[5] = 9;
+    sys.runOp(0xF529);
+    try std.testing.expectEqual(0x50 + 9 * 5, sys.i);
+}
 
 test "op_fx33" {
     var sys = System.init();
