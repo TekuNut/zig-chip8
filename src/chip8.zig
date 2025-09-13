@@ -156,7 +156,11 @@ pub const System = struct {
     display_pixel_off: u32 = DEFAULT_PIXEL_OFF,
     display_pixel_on: u32 = DEFAULT_PIXEL_ON,
 
+    // Random number generation
     rng: std.Random.DefaultPrng,
+
+    // Quirks
+    quirk_shift: bool = false, // If true, take VX as both input and output for shift instructions.
 
     pub fn init() System {
         const rng = std.Random.DefaultPrng.init(blk: {
@@ -268,20 +272,30 @@ pub const System = struct {
             Instructions.SUB_Vx_Vy => |i| {
                 const res, const carry = @subWithOverflow(self.v[i.vx], self.v[i.vy]);
                 self.v[i.vx] = res;
-                self.v[0xF] = carry;
+                self.v[0xF] = if (carry == 1) 0 else 1;
             },
             Instructions.SHR_Vx_Vy => |i| {
-                self.v[0xF] = self.v[i.vx] & 0x1;
+                if (!self.quirk_shift) {
+                    self.v[i.vx] = self.v[i.vy];
+                }
+
+                const carry = self.v[i.vx] & 0x1;
                 self.v[i.vx] >>= 1;
+                self.v[0xF] = carry;
             },
             Instructions.SUBN_Vx_Vy => |i| {
                 const res, const carry = @subWithOverflow(self.v[i.vy], self.v[i.vx]);
                 self.v[i.vx] = res;
-                self.v[0xF] = carry;
+                self.v[0xF] = if (carry == 1) 0 else 1;
             },
             Instructions.SHL_Vx_Vy => |i| {
-                self.v[0xF] = (self.v[i.vx] & 0x80) >> 7;
-                self.v[i.vx] <<= 1;
+                if (!self.quirk_shift) {
+                    self.v[i.vx] = self.v[i.vy];
+                }
+
+                const res, const carry = @shlWithOverflow(self.v[i.vx], 1);
+                self.v[i.vx] = res;
+                self.v[0xF] = carry;
             },
             Instructions.SNE_Vx_Vy => |i| {
                 if (self.v[i.vx] != self.v[i.vy]) {
