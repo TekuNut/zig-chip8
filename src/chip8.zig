@@ -157,6 +157,9 @@ pub const System = struct {
     display_pixel_off: u32 = DEFAULT_PIXEL_OFF,
     display_pixel_on: u32 = DEFAULT_PIXEL_ON,
 
+    // Keypad
+    keypad: [16]bool,
+
     // Random number generation
     rng: std.Random.DefaultPrng,
 
@@ -178,6 +181,7 @@ pub const System = struct {
         @memset(self.display[0..], self.display_pixel_off);
         @memset(self.v[0..], 0);
         @memset(self.stack[0..], 0);
+        @memset(self.keypad[0..], false);
         @memcpy(self.mem[FONT_ADDR..][0..FONT_LEN], self.font[0..]);
 
         self.pc = 0x200;
@@ -362,11 +366,17 @@ pub const System = struct {
                     }
                 }
             },
-            Instructions.OP_EX9E => |_| {
-                // SKP Vx
-            },
-            Instructions.OP_EXA1 => |_| {
+            Instructions.OP_EX9E => |vx| {
                 // SKNP Vx
+                if (!self.keypad[self.v[vx]]) {
+                    self.pc += 2;
+                }
+            },
+            Instructions.OP_EXA1 => |vx| {
+                // SKP Vx
+                if (self.keypad[self.v[vx]]) {
+                    self.pc += 2;
+                }
             },
             Instructions.OP_FX07 => |vx| {
                 // LD Vx, DT
@@ -644,9 +654,22 @@ test "op_cxkk" {
 
 test "op_dxyn" {}
 
-test "op_ex9e" {}
+test "op_ex9e" {
+    var sys = System.init();
+    sys.v[2] = 4;
+    sys.runOp(0xE29E);
 
-test "op_exa1" {}
+    try std.testing.expectEqual(0x204, sys.pc);
+}
+
+test "op_exa1" {
+    var sys = System.init();
+    sys.v[6] = 4;
+    sys.keypad[4] = true;
+    sys.runOp(0xE6A1);
+
+    try std.testing.expectEqual(0x204, sys.pc);
+}
 
 test "op_fx07" {
     var sys = System.init();
