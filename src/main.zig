@@ -10,7 +10,7 @@ pub fn main() anyerror!void {
     const screenWidth = 800;
     const screenHeight = 600;
 
-    var ticks_per_frame: u32 = 7;
+    var ticks_per_frame: u32 = 15;
 
     // Specify the parameters for the program.
     const params = comptime clap.parseParamsComptime(
@@ -36,6 +36,27 @@ pub fn main() anyerror!void {
     if (res.args.speed) |s| {
         ticks_per_frame = s;
     }
+
+    // Setup mapping between platform keyboard and CHIP8 keypad.
+    var keypad_mapping = std.AutoHashMap(u8, rl.KeyboardKey).init(gpa.allocator());
+    defer keypad_mapping.deinit();
+
+    try keypad_mapping.put(0, .x);
+    try keypad_mapping.put(1, .one);
+    try keypad_mapping.put(2, .two);
+    try keypad_mapping.put(3, .three);
+    try keypad_mapping.put(4, .q);
+    try keypad_mapping.put(5, .w);
+    try keypad_mapping.put(6, .e);
+    try keypad_mapping.put(7, .a);
+    try keypad_mapping.put(8, .s);
+    try keypad_mapping.put(9, .d);
+    try keypad_mapping.put(0xA, .z);
+    try keypad_mapping.put(0xB, .c);
+    try keypad_mapping.put(0xC, .four);
+    try keypad_mapping.put(0xD, .r);
+    try keypad_mapping.put(0xE, .f);
+    try keypad_mapping.put(0xF, .v);
 
     rl.initWindow(screenWidth, screenHeight, "zig8 - Chip8 Emulator");
     defer rl.closeWindow();
@@ -82,12 +103,24 @@ pub fn main() anyerror!void {
 
         const debug_step = rl.isKeyPressed(.f1);
 
+        // Check if any CHIP8 keys have been pressed and set them.
+        var key_iterator = keypad_mapping.iterator();
+        while (key_iterator.next()) |entry| {
+            if (rl.isKeyReleased(entry.value_ptr.*)) {
+                sys.keypad[entry.key_ptr.*] = .RELEASED;
+            } else if (rl.isKeyDown(entry.value_ptr.*)) {
+                sys.keypad[entry.key_ptr.*] = .PRESSED;
+            } else {
+                sys.keypad[entry.key_ptr.*] = .UNPRESSED;
+            }
+        }
+
         // Update
         if (!paused) {
             if (debug and debug_step) {
                 sys.tick();
             } else if (!debug) {
-                sys.tickN(ticks_per_frame);
+                sys.tickN(sys.tick_speed);
             }
         }
 

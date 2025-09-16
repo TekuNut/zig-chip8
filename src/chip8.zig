@@ -1,5 +1,6 @@
 const std = @import("std");
 const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 
 const MEMORY_LEN = 4096;
 const V_REGISTERS_LEN = 16;
@@ -120,6 +121,12 @@ const Instructions = union(enum) {
     }
 };
 
+pub const KeypadState = enum(u8) {
+    UNPRESSED,
+    PRESSED,
+    RELEASED,
+};
+
 pub const System = struct {
     mem: [MEMORY_LEN]u8 = [_]u8{0} ** MEMORY_LEN,
     display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u32 = [_]u32{0} ** (DISPLAY_WIDTH * DISPLAY_HEIGHT),
@@ -151,14 +158,26 @@ pub const System = struct {
     dt: u8 = 0,
     st: u8 = 0,
 
+    /// How many ticks are executed before decrementing dt/st.
+    tick_speed: u32,
+
+    /// Ticks remaining before decrementing dt/st.
+    ticks_remaining: u32,
+
     // Display colours (R8G8B8A8)
     display_width: u16 = DISPLAY_WIDTH,
     display_height: u16 = DISPLAY_HEIGHT,
     display_pixel_off: u32 = DEFAULT_PIXEL_OFF,
     display_pixel_on: u32 = DEFAULT_PIXEL_ON,
 
-    // Keypad
-    keypad: [16]bool,
+    /// Current keypad state.
+    keypad: [16]KeypadState,
+
+    /// If CPU is halted for keypad input.
+    keypad_waiting: bool = false,
+
+    /// Which Vx register to save the keypress to.
+    keypad_save_to_vx: u8 = 0,
 
     // Random number generation
     rng: std.Random.DefaultPrng,
@@ -168,12 +187,16 @@ pub const System = struct {
     quirk_shift: bool = false,
 
     pub fn init() System {
+        return initWithSpeed(12);
+    }
+
+    pub fn initWithSpeed(speed: u32) System {
         const rng = std.Random.DefaultPrng.init(blk: {
             var seed: u64 = undefined;
             std.crypto.random.bytes(std.mem.asBytes(&seed));
             break :blk seed;
         });
-        return std.mem.zeroInit(System, .{ .rng = rng });
+        return std.mem.zeroInit(System, .{ .rng = rng, .tick_speed = speed, .ticks_remaining = speed });
     }
 
     pub fn reset(self: *System) void {
@@ -181,7 +204,7 @@ pub const System = struct {
         @memset(self.display[0..], self.display_pixel_off);
         @memset(self.v[0..], 0);
         @memset(self.stack[0..], 0);
-        @memset(self.keypad[0..], false);
+        @memset(self.keypad[0..], .UNPRESSED);
         @memcpy(self.mem[FONT_ADDR..][0..FONT_LEN], self.font[0..]);
 
         self.pc = 0x200;
@@ -189,6 +212,10 @@ pub const System = struct {
         self.sp = 0;
         self.dt = 0;
         self.st = 0;
+
+        self.keypad_waiting = false;
+        self.keypad_save_to_vx = 0;
+        self.ticks_remaining = self.tick_speed;
     }
 
     pub fn readProgram(self: *System, input: *std.io.Reader) !void {
@@ -367,14 +394,16 @@ pub const System = struct {
                 }
             },
             Instructions.OP_EX9E => |vx| {
-                // SKNP Vx
-                if (!self.keypad[self.v[vx]]) {
+                // SKP Vx
+                // Skip next instruction if key with the value of Vx is pressed.
+                if (self.keypad[self.v[vx]] == .PRESSED) {
                     self.pc += 2;
                 }
             },
             Instructions.OP_EXA1 => |vx| {
-                // SKP Vx
-                if (self.keypad[self.v[vx]]) {
+                // SKNP Vx
+                // Skip next instruction if key with the value of Vx is NOT pressed.
+                if (self.keypad[self.v[vx]] != .PRESSED) {
                     self.pc += 2;
                 }
             },
@@ -382,8 +411,10 @@ pub const System = struct {
                 // LD Vx, DT
                 self.v[vx] = self.dt;
             },
-            Instructions.OP_FX0A => |_| {
+            Instructions.OP_FX0A => |vx| {
                 // LD Vx, K
+                self.keypad_waiting = true;
+                self.keypad_save_to_vx = vx;
             },
             Instructions.OP_FX15 => |vx| {
                 // LD DT, Vx
@@ -427,16 +458,43 @@ pub const System = struct {
     }
 
     pub fn tick(self: *System) void {
-        // Fetch the instruction
-        const op = std.mem.readInt(u16, self.mem[self.pc..][0..2], .big);
-        std.log.debug("instruction: 0x{X:0>4}, pc=0x{X:0>4}", .{ op, self.pc });
-
-        self.runOp(op);
+        self.tickN(1);
     }
 
     pub fn tickN(self: *System, count: usize) void {
-        for (0..count) |_| {
-            self.tick();
+        tick: for (0..count) |_| {
+            // Check if dt and st need to be decremented.
+            self.ticks_remaining -= 1;
+            if (self.ticks_remaining == 0) {
+                if (self.dt > 0) {
+                    self.dt -= 1;
+                }
+
+                if (self.st > 0) {
+                    self.st -= 1;
+                }
+
+                self.ticks_remaining = self.tick_speed;
+            }
+
+            if (self.keypad_waiting) {
+                for (0.., self.keypad) |i, state| {
+                    if (state == .RELEASED) {
+                        // Detect if a key was pressed and then released.
+                        self.keypad_waiting = false;
+                        self.v[self.keypad_save_to_vx] = @truncate(i);
+                        break;
+                    }
+                } else {
+                    continue :tick; // End tick if no key was pressed.
+                }
+            }
+
+            // Fetch the instruction
+            const op = std.mem.readInt(u16, self.mem[self.pc..][0..2], .big);
+            // std.log.debug("instruction: 0x{X:0>4}, pc=0x{X:0>4}", .{ op, self.pc });
+
+            self.runOp(op);
         }
     }
 };
@@ -657,6 +715,7 @@ test "op_dxyn" {}
 test "op_ex9e" {
     var sys = System.init();
     sys.v[2] = 4;
+    sys.keypad[4] = .PRESSED;
     sys.runOp(0xE29E);
 
     try std.testing.expectEqual(0x204, sys.pc);
@@ -665,7 +724,6 @@ test "op_ex9e" {
 test "op_exa1" {
     var sys = System.init();
     sys.v[6] = 4;
-    sys.keypad[4] = true;
     sys.runOp(0xE6A1);
 
     try std.testing.expectEqual(0x204, sys.pc);
@@ -679,7 +737,20 @@ test "op_fx07" {
     try std.testing.expectEqual(200, sys.v[2]);
 }
 
-test "op_fx0a" {}
+test "op_fx0a" {
+    var sys = System.init();
+    sys.mem[0x202] = 0x00;
+    sys.mem[0x203] = 0xE0; // Suppress illegal instructions warning.
+    sys.runOp(0xF30A);
+    sys.tickN(4);
+    try expectEqual(0x202, sys.pc);
+
+    // Press key
+    sys.keypad[4] = .RELEASED;
+    sys.tick();
+    try expectEqual(0x204, sys.pc);
+    try expectEqual(4, sys.v[3]);
+}
 
 test "op_fx15" {
     var sys = System.init();
