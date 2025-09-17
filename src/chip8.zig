@@ -127,6 +127,10 @@ pub const KeypadState = enum(u8) {
     RELEASED,
 };
 
+pub const OutputState = struct {
+    beep: bool,
+};
+
 pub const System = struct {
     mem: [MEMORY_LEN]u8 = [_]u8{0} ** MEMORY_LEN,
     display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u32 = [_]u32{0} ** (DISPLAY_WIDTH * DISPLAY_HEIGHT),
@@ -298,14 +302,17 @@ pub const System = struct {
             Instructions.OP_8XY1 => |i| {
                 // LD OR Vx, Vy
                 self.v[i.vx] |= self.v[i.vy];
+                self.v[0xF] = 0;
             },
             Instructions.OP_8XY2 => |i| {
                 // AND Vx, Vy
                 self.v[i.vx] &= self.v[i.vy];
+                self.v[0xF] = 0;
             },
             Instructions.OP_8XY3 => |i| {
                 // XOR Vx, Vy
                 self.v[i.vx] ^= self.v[i.vy];
+                self.v[0xF] = 0;
             },
             Instructions.OP_8XY4 => |i| {
                 // ADD Vx, Vy
@@ -457,11 +464,11 @@ pub const System = struct {
         }
     }
 
-    pub fn tick(self: *System) void {
-        self.tickN(1);
+    pub fn tick(self: *System) OutputState {
+        return self.tickN(1);
     }
 
-    pub fn tickN(self: *System, count: usize) void {
+    pub fn tickN(self: *System, count: usize) OutputState {
         tick: for (0..count) |_| {
             // Check if dt and st need to be decremented.
             self.ticks_remaining -= 1;
@@ -496,6 +503,8 @@ pub const System = struct {
 
             self.runOp(op);
         }
+
+        return OutputState{ .beep = self.st > 0 };
     }
 };
 

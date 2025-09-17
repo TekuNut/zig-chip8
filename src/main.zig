@@ -3,6 +3,30 @@ const zig8 = @import("zig8");
 const rl = @import("raylib");
 const clap = @import("clap");
 
+const C = std.builtin.CallingConvention.c;
+
+const MAX_SAMPLES_PER_UPDATE = 4096;
+
+/// Cycles per second (Hz)
+var frequency: f32 = 440.0;
+
+/// The x position for the sin function. Clamped between -1.0 and 1.0.
+var sineIdx: f32 = 0.0;
+
+/// Generate an audio waveform and write it into the provided buffer.
+fn audioInputCallback(buffer: ?*anyopaque, frames: c_uint) callconv(C) void {
+    const d: [*]i16 = @ptrCast(@alignCast(buffer orelse return));
+    const incr = frequency / 44100.0;
+
+    for (0..frames) |i| {
+        d[i] = @intFromFloat(32000.0 * @sin(2 * std.math.pi * sineIdx));
+        sineIdx += incr;
+        if (sineIdx > 1.0) {
+            sineIdx -= 1.0; // Keep the sineIdx between -1.0 and 1.0.
+        }
+    }
+}
+
 pub fn main() anyerror!void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -61,11 +85,23 @@ pub fn main() anyerror!void {
     rl.initWindow(screenWidth, screenHeight, "zig8 - Chip8 Emulator");
     defer rl.closeWindow();
 
+    rl.initAudioDevice();
+    defer rl.closeAudioDevice();
+
+    rl.setAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
+
+    // Initialize the raw audio stream for the beeping.
+    const stream = try rl.loadAudioStream(44100, 16, 1);
+    defer rl.unloadAudioStream(stream);
+
+    rl.setAudioStreamCallback(stream, &audioInputCallback);
+
+    // Target 60 FPS to match the speed of the Chip8 timers.
     rl.setTargetFPS(60);
 
     var sys = zig8.System.init();
-
     sys.reset();
+
     if (res.args.rom) |r| {
         std.log.debug("Opening ROM file: {s}", .{r});
         var file = std.fs.cwd().openFile(r, .{ .mode = .read_only }) catch |err| {
@@ -89,6 +125,8 @@ pub fn main() anyerror!void {
 
     var display = rl.Image.genColor(@as(i32, sys.display_width), @as(i32, sys.display_height), .black);
     const display_texture = try rl.Texture2D.fromImage(display);
+
+    rl.playAudioStream(stream);
 
     // Main loop
     while (!rl.windowShouldClose()) {
@@ -116,12 +154,19 @@ pub fn main() anyerror!void {
         }
 
         // Update
+        var output = zig8.OutputState{ .beep = false };
         if (!paused) {
             if (debug and debug_step) {
-                sys.tick();
+                output = sys.tick();
             } else if (!debug) {
-                sys.tickN(sys.tick_speed);
+                output = sys.tickN(sys.tick_speed);
             }
+        }
+
+        if (output.beep) {
+            rl.playAudioStream(stream);
+        } else {
+            rl.stopAudioStream(stream);
         }
 
         // Draw
