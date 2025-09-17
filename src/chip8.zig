@@ -187,8 +187,18 @@ pub const System = struct {
     rng: std.Random.DefaultPrng,
 
     // Quirks
-    /// If true, take VX as both input and output for shift instructions. Else use VY for input and output result to VX.
+    /// If true, take VX as both input and output for opcodes `8XY6` and `8XYE`. Else use VY for input and output result to VX.
     quirk_shift: bool = false,
+    /// If true, FX55 and FX65 will increment I by X. Else I is incremented by (X+1).
+    quirk_memory_increment_by_x: bool = false,
+    /// If true opcodes `FX55` and `FX65` leaves the `i` register unchanged.
+    quirk_memory_leave_i_unchanged: bool = false,
+    /// If true, opcode DXYN will wrap around to the other side of the screen when drawing. Else it will clip.
+    quirk_wrap: bool = false,
+    /// If true, opcode DXYN will wait for vblank (maximum of 60 sprites drawn per second).
+    quirk_vblank: bool = true,
+    /// If true, opcodes `8XY1`, `8XY2` and `8XY3` will set `VF` to 0 after execution. Else it is left alone (unless `vF` is the parameter `X`).
+    quirk_logic: bool = true,
 
     pub fn init() System {
         return initWithSpeed(12);
@@ -302,17 +312,23 @@ pub const System = struct {
             Instructions.OP_8XY1 => |i| {
                 // LD OR Vx, Vy
                 self.v[i.vx] |= self.v[i.vy];
-                self.v[0xF] = 0;
+                if (self.quirk_logic) {
+                    self.v[0xF] = 0;
+                }
             },
             Instructions.OP_8XY2 => |i| {
                 // AND Vx, Vy
                 self.v[i.vx] &= self.v[i.vy];
-                self.v[0xF] = 0;
+                if (self.quirk_logic) {
+                    self.v[0xF] = 0;
+                }
             },
             Instructions.OP_8XY3 => |i| {
                 // XOR Vx, Vy
                 self.v[i.vx] ^= self.v[i.vy];
-                self.v[0xF] = 0;
+                if (self.quirk_logic) {
+                    self.v[0xF] = 0;
+                }
             },
             Instructions.OP_8XY4 => |i| {
                 // ADD Vx, Vy
@@ -373,18 +389,31 @@ pub const System = struct {
             },
             Instructions.OP_DXYN => |i| {
                 // DRW Vx, Vy, n
-                const x_coord: u8 = self.v[i.vx];
-                const y_coord: u8 = self.v[i.vy];
+                // If the sprite drawing starts offscreen, it is wrapped regardless of the `quirk_wrap` setting.
+                const x_coord: u16 = self.v[i.vx] % self.display_width;
+                const y_coord: u16 = self.v[i.vy] % self.display_height;
 
                 self.v[0xF] = 0; // Clear the VF register.
                 for (0..i.n) |y| {
                     var spriteRow: u8 = self.mem[self.i + y];
-                    const row = (y_coord + y) % self.display_height;
+                    var row = (y_coord + y);
+                    if (self.quirk_wrap) {
+                        row %= self.display_height;
+                    } else if (row < 0 or row >= self.display_height) {
+                        continue;
+                    }
 
-                    var x: u8 = 0;
+                    var x: u16 = 0;
                     while (x < 8) : (x += 1) {
                         const spritePixel = (spriteRow & 0x80) >> 7;
-                        const col = (x_coord + x) % self.display_width;
+
+                        var col = (x_coord + x);
+                        if (self.quirk_wrap) {
+                            col %= self.display_width;
+                        } else if (col < 0 or col >= self.display_width) {
+                            continue;
+                        }
+
                         const displayPixel: *u32 = &self.display[row * self.display_width + col];
 
                         if (spritePixel == 1) {
@@ -452,11 +481,17 @@ pub const System = struct {
                 // LD [I], Vx
                 // TODO: Check memory boundry.
                 @memcpy(self.mem[self.i..][0 .. vx + 1], self.v[0 .. vx + 1]);
+                if (!self.quirk_memory_leave_i_unchanged) {
+                    self.i += if (self.quirk_memory_increment_by_x) vx else 1 + vx;
+                }
             },
             Instructions.OP_FX65 => |vx| {
                 // LD Vx, [I]
                 // TODO: Check memory boundry.
                 @memcpy(self.v[0 .. vx + 1], self.mem[self.i..][0 .. vx + 1]);
+                if (!self.quirk_memory_leave_i_unchanged) {
+                    self.i += if (self.quirk_memory_increment_by_x) vx else 1 + vx;
+                }
             },
             Instructions.OP_UNKNOWN => {
                 std.log.warn("Unknown instruction: 0x{X:0>4}", .{op});
