@@ -162,10 +162,10 @@ pub const System = struct {
     dt: u8 = 0,
     st: u8 = 0,
 
-    /// How many ticks are executed before decrementing dt/st.
+    /// How many ticks are executed before decrementing dt/st and vblank occurs.
     tick_speed: u32,
 
-    /// Ticks remaining before decrementing dt/st.
+    /// Ticks remaining before decrementing dt/st and triggering vblank.
     ticks_remaining: u32,
 
     // Display colours (R8G8B8A8)
@@ -173,6 +173,9 @@ pub const System = struct {
     display_height: u16 = DISPLAY_HEIGHT,
     display_pixel_off: u32 = DEFAULT_PIXEL_OFF,
     display_pixel_on: u32 = DEFAULT_PIXEL_ON,
+    /// If `quirk_vblank` is set this is set when a DXYN op is executed. This prevents subsequent DXYN instructions
+    /// from executing until the vblank occurs.
+    display_draw_stalled: bool = false,
 
     /// Current keypad state.
     keypad: [16]KeypadState,
@@ -387,8 +390,15 @@ pub const System = struct {
                 const rand = self.rng.random();
                 self.v[i.vx] = rand.int(u8) & i.kk;
             },
-            Instructions.OP_DXYN => |i| {
+            Instructions.OP_DXYN => |i| blk: {
                 // DRW Vx, Vy, n
+                if (self.quirk_vblank and self.display_draw_stalled) {
+                    self.pc -= 2; // Hang on this instruction until vblank.
+                    break :blk;
+                } else if (self.quirk_vblank) {
+                    self.display_draw_stalled = true; // Stall the next DXYN instruction call.
+                }
+
                 // If the sprite drawing starts offscreen, it is wrapped regardless of the `quirk_wrap` setting.
                 const x_coord: u16 = self.v[i.vx] % self.display_width;
                 const y_coord: u16 = self.v[i.vy] % self.display_height;
@@ -516,6 +526,7 @@ pub const System = struct {
                     self.st -= 1;
                 }
 
+                self.display_draw_stalled = false; // Simulate vblank occuring.
                 self.ticks_remaining = self.tick_speed;
             }
 
